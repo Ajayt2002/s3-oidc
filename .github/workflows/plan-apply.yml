@@ -22,6 +22,9 @@ jobs:
       contents: read
       pull-requests: write
 
+    outputs:
+      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
+
     steps:
 
       - name: Checkout code
@@ -42,7 +45,7 @@ jobs:
         run: terraform init
 
       - name: Terraform Format Check
-        run: terraform fmt -check
+        run: terraform fmt -check -recursive
 
       - name: Terraform Validate
         run: terraform validate
@@ -64,10 +67,6 @@ jobs:
 
           echo "Terraform plan exit code: $exitcode"
 
-          # 0 = No changes
-          # 1 = Error
-          # 2 = Changes detected
-
           if [ "$exitcode" -eq 1 ]; then
             exit 1
           fi
@@ -82,58 +81,6 @@ jobs:
             tfplan.txt
           retention-days: 7
 
-      - name: Comment Terraform Plan
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-
-            const plan = fs.readFileSync('tfplan.txt', 'utf8');
-
-            const match = plan.match(
-              /Plan: (\d+) to add, (\d+) to change, (\d+) to destroy/
-            );
-
-            let summary;
-
-            if (match) {
-              summary = `
-            ## Terraform Plan Summary
-
-            | Action | Count |
-            |--------|------:|
-            | Create | ${match[1]} |
-            | Update | ${match[2]} |
-            | Delete | ${match[3]} |
-            `;
-            } else {
-              summary = `
-            ## Terraform Plan Summary
-
-            No infrastructure changes.
-            `;
-            }
-
-            const body = `${summary}
-
-            <details>
-            <summary>Show Terraform Plan</summary>
-
-            \`\`\`
-            ${plan.slice(0, 60000)}
-            \`\`\`
-
-            </details>
-            `;
-
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body
-            });
-
 
   terraform-apply:
     name: Terraform Apply
@@ -141,7 +88,6 @@ jobs:
 
     needs: terraform-plan
 
-    # THIS ENVIRONMENT REQUIRES APPROVAL
     environment:
       name: terraform-apply
 
@@ -149,11 +95,9 @@ jobs:
       id-token: write
       contents: read
 
-    # IMPORTANT:
-    # Direct push to main ALSO reaches this job.
     if: |
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      needs.terraform-plan.outputs.plan_exitcode == '2'
 
     steps:
 
