@@ -65,14 +65,26 @@ jobs:
 
           echo "exitcode=$exitcode" >> "$GITHUB_OUTPUT"
 
-          echo "Terraform plan exit code: $exitcode"
+          echo "======================================"
+          echo "Terraform Plan Exit Code: $exitcode"
+          echo "======================================"
 
           if [ "$exitcode" -eq 1 ]; then
+            echo "Terraform plan failed."
             exit 1
           fi
 
+          if [ "$exitcode" -eq 2 ]; then
+            echo "Terraform changes detected."
+          else
+            echo "No Terraform changes detected."
+          fi
+
+      # Upload whenever the plan was successful:
+      # 0 = no changes
+      # 2 = changes
       - name: Upload Terraform Plan
-        if: steps.plan.outputs.exitcode == '2'
+        if: steps.plan.outputs.exitcode == '0' || steps.plan.outputs.exitcode == '2'
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
@@ -88,7 +100,7 @@ jobs:
 
     needs: terraform-plan
 
-    # Manual approval happens here
+    # This environment has the required reviewer
     environment:
       name: terraform-apply
 
@@ -96,18 +108,25 @@ jobs:
       id-token: write
       contents: read
 
+    # Only main can apply
     if: |
-      github.ref == 'refs/heads/main'
+      github.ref == 'refs/heads/main' &&
+      needs.terraform-plan.outputs.plan_exitcode == '2'
 
     steps:
 
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # IMPORTANT:
+      # Approval happens BEFORE this job starts.
+      # Therefore AWS credentials are only requested after approval.
+
       - name: Download Terraform Plan
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan
+          path: .
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
