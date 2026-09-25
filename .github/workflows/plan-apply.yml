@@ -77,9 +77,11 @@ jobs:
             -input=false \
             -no-color \
             -detailed-exitcode \
-            -out=tfplan 2>&1 | tee tfplan.txt
+            -out=tfplan > tfplan.txt 2>&1
 
-          exitcode=${PIPESTATUS[0]}
+          exitcode=$?
+
+          cat tfplan.txt
 
           echo "exitcode=$exitcode" >> "$GITHUB_OUTPUT"
 
