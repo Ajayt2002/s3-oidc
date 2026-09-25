@@ -88,6 +88,7 @@ jobs:
 
     needs: terraform-plan
 
+    # Manual approval happens here
     environment:
       name: terraform-apply
 
@@ -96,13 +97,17 @@ jobs:
       contents: read
 
     if: |
-      github.ref == 'refs/heads/main' &&
-      needs.terraform-plan.outputs.plan_exitcode == '2'
+      github.ref == 'refs/heads/main'
 
     steps:
 
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
@@ -117,11 +122,6 @@ jobs:
 
       - name: Terraform Init
         run: terraform init
-
-      - name: Download Terraform Plan
-        uses: actions/download-artifact@v4
-        with:
-          name: terraform-plan
 
       - name: Terraform Apply
         run: terraform apply -auto-approve tfplan
