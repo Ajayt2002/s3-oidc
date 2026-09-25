@@ -1,4 +1,6 @@
-resource "aws_s3_bucket" "test_bucket" {
-  bucket        = "amr-terraform-test-bucket-341243253232"
-  force_destroy = true
+resource "aws_vpc" "cibolo" {
+    cidr_block = "10.0.0.0/16"
+    tags = {
+        Name = "cibolo-vpc"
+    }
 }
