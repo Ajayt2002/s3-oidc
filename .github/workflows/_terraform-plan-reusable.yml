@@ -1,0 +1,143 @@
+name: Terraform Plan (Reusable)
+
+on:
+  workflow_call:
+    inputs:
+      destroy:
+        description: "Set true to generate a destroy plan instead of a normal plan"
+        required: false
+        type: boolean
+        default: false
+      tf_version:
+        required: true
+        type: string
+      aws_region:
+        required: true
+        type: string
+      artifact_name:
+        required: true
+        type: string
+    secrets:
+      aws_role_arn:
+        required: true
+    outputs:
+      plan_exitcode:
+        description: "0 = no changes, 1 = error, 2 = changes present"
+        value: ${{ jobs.plan.outputs.plan_exitcode }}
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+
+    # Skip for PRs from forks: they can't assume the AWS role via OIDC
+    # (secrets/OIDC tokens aren't exposed to fork-triggered pull_request runs).
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+
+    outputs:
+      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
+
+    steps:
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.tf_version }}
+          terraform_wrapper: false
+
+      # Runs before AWS creds are requested, so a formatting failure fails fast.
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ secrets.aws_role_arn }}
+          aws-region: ${{ inputs.aws_region }}
+
+      - name: Terraform Init
+        run: terraform init -input=false
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        shell: bash
+        run: |
+          set +e
+
+          DESTROY_FLAG=""
+          if [ "${{ inputs.destroy }}" = "true" ]; then
+            DESTROY_FLAG="-destroy"
+          fi
+
+          terraform plan \
+            $DESTROY_FLAG \
+            -input=false \
+            -no-color \
+            -detailed-exitcode \
+            -out=tfplan > tfplan.txt 2>&1
+
+          exitcode=$?
+
+          cat tfplan.txt
+
+          echo "exitcode=$exitcode" >> "$GITHUB_OUTPUT"
+
+          echo "======================================"
+          echo "Terraform Plan Exit Code: $exitcode"
+          echo "======================================"
+
+          if [ "$exitcode" -eq 1 ]; then
+            echo "Terraform plan failed."
+            exit 1
+          fi
+
+          if [ "$exitcode" -eq 2 ]; then
+            echo "Changes detected."
+          else
+            echo "No changes detected."
+          fi
+
+      # JSON export feeds the Infracost cost-estimate job in plan-apply.yml.
+      - name: Export Plan JSON
+        if: steps.plan.outputs.exitcode == '2'
+        run: terraform show -no-color -json tfplan > tfplan.json
+
+      # Writes a clean, readable plan to the run's Summary page (visible to the
+      # approver before they click Approve — no digging through raw logs).
+      - name: Publish Plan to Job Summary
+        if: steps.plan.outputs.exitcode == '2'
+        run: |
+          {
+            echo "## Terraform Plan"
+            echo ""
+            echo "\`\`\`hcl"
+            terraform show -no-color tfplan
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Upload whenever the plan was successful:
+      # 0 = no changes
+      # 2 = changes
+      - name: Upload Plan Artifact
+        if: steps.plan.outputs.exitcode == '0' || steps.plan.outputs.exitcode == '2'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: |
+            tfplan
+            tfplan.txt
+            tfplan.json
+          retention-days: 7
