@@ -101,6 +101,19 @@ jobs:
             echo "No Terraform changes detected."
           fi
 
+      # Writes a clean, readable plan to the run's Summary page (visible to the
+      # approver before they click Approve — no digging through raw logs).
+      - name: Publish Plan to Job Summary
+        if: steps.plan.outputs.exitcode == '2'
+        run: |
+          {
+            echo "## Terraform Plan"
+            echo ""
+            echo "\`\`\`hcl"
+            terraform show -no-color tfplan
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       # Upload whenever the plan was successful:
       # 0 = no changes
       # 2 = changes
