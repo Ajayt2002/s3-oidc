@@ -1,4 +1,4 @@
 resource "aws_s3_bucket" "test_bucket" {
-  bucket = "amr-terraform-test-bucket-341243253232"
+  bucket        = "amr-terraform-test-bucket-341243253232"
   force_destroy = true
 }
