@@ -36,6 +36,10 @@ jobs:
   terraform-plan:
     name: Terraform Plan
     needs: security-scan
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
     uses: ./.github/workflows/_terraform-plan-reusable.yml
     with:
       destroy: false
