@@ -1,6 +1,6 @@
-resource "aws_vpc" "cibolo" {
-  cidr_block = "10.0.0.0/16"
+resource "aws_vpc" "cibolo_staging" {
+  cidr_block = "10.0.20.0/16"
   tags = {
-    Name = "cibolo-test-vpc"
+    Name = "cibolo-staging-vpc"
   }
 }
